@@ -85,6 +85,49 @@ def add_task(title, due=None, goal=None):
     print(f"{GREEN}✓ Task #{task_id} added:{RESET} {BOLD}{title}{RESET}" +
           (f" {YELLOW}(Due: {parsed_due}){RESET}" if parsed_due else ""))
 
+def edit_task(task_id, title=None, due=None, goal=None):
+    today = date.today()
+    parsed_due = None
+    if due:
+        lower = due.strip().lower()
+        if lower in ("today", "t"):
+            parsed_due = today.isoformat()
+        elif lower in ("tomorrow", "tom"):
+            parsed_due = (today + timedelta(days=1)).isoformat()
+        else:
+            try:
+                parsed_due = datetime.strptime(due, "%Y-%m-%d").date().isoformat()
+            except ValueError:
+                parsed_due = due
+
+    conn = get_connection()
+    cur = conn.cursor()
+    updates = []
+    params = []
+    if title:
+        updates.append("title = ?")
+        params.append(title)
+    if due is not None:
+        updates.append("due_date = ?")
+        params.append(parsed_due)
+    if goal is not None:
+        updates.append("goal_tag = ?")
+        params.append(goal)
+
+    if not updates:
+        print(f"{YELLOW}No updates specified. Use --title, --due, or --goal.{RESET}")
+        conn.close()
+        return
+
+    params.append(task_id)
+    cur.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
+    if cur.rowcount > 0:
+        conn.commit()
+        print(f"{GREEN}✓ Task #{task_id} updated successfully!{RESET}")
+    else:
+        print(f"{RED}Task #{task_id} not found.{RESET}")
+    conn.close()
+
 def complete_task(task_id):
     conn = get_connection()
     cur = conn.cursor()
@@ -277,6 +320,11 @@ def show_conky():
     print("${hr 1}")
     yt_status = f"{yt_mins}/20 min" + (" ${color #ff5555}[LOCKED]${color}" if yt_blocked else "")
     print(f"⏱️ YouTube: {yt_status}")
+    print("${hr 1}")
+    print("${color #bd93f9}${font :bold:size=8}QUICK COMMANDS:${font}${color}")
+    print("${color #8be9fd}• Add:${color} focusforge add \"...\" -d today")
+    print("${color #8be9fd}• Edit:${color} focusforge edit <id> -t \"...\"")
+    print("${color #8be9fd}• Done:${color} focusforge done <id>")
 
 def main():
     parser = argparse.ArgumentParser(description="FocusForge - Task & Habit Guardian")
@@ -287,6 +335,13 @@ def main():
     p_add.add_argument("title", type=str, help="Task description")
     p_add.add_argument("--due", "-d", type=str, default=None, help="Due date (today, tomorrow, YYYY-MM-DD)")
     p_add.add_argument("--goal", "-g", type=str, default=None, help="Goal category or tag")
+
+    # edit
+    p_edit = subparsers.add_parser("edit", help="Edit an existing task")
+    p_edit.add_argument("id", type=int, help="Task ID")
+    p_edit.add_argument("--title", "-t", type=str, default=None, help="New task title")
+    p_edit.add_argument("--due", "-d", type=str, default=None, help="New due date (today, tomorrow, YYYY-MM-DD)")
+    p_edit.add_argument("--goal", "-g", type=str, default=None, help="New goal tag")
 
     # done
     p_done = subparsers.add_parser("done", help="Mark task completed")
@@ -313,6 +368,8 @@ def main():
 
     if args.command == "add":
         add_task(args.title, args.due, args.goal)
+    elif args.command == "edit":
+        edit_task(args.id, args.title, args.due, args.goal)
     elif args.command == "done":
         complete_task(args.id)
     elif args.command == "rm":
