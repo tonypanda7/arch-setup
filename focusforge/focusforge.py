@@ -297,15 +297,16 @@ def show_conky():
     yt_secs, yt_blocked = get_today_youtube_usage()
     yt_mins = yt_secs // 60
 
-    print("${color #00ffff}${font :bold:size=11}🎯 FOCUSFORGE${font}${color}")
+    print("${color #00ffff}${font :bold:size=14}🎯 FOCUSFORGE${font}${color}")
+    print("${color #50fa7b}${font :bold:size=10}▶ Click widget to launch Konsole${font}${color}")
     print("${hr 1}")
     if goals:
-        print("${color #ff79c6}${font :bold:size=9}GOALS:${font}${color}")
+        print("${color #ff79c6}${font :bold:size=11}🌟 KEY GOALS:${font}${color}")
         for gtitle, period in goals:
             print(f" • {gtitle} ({period})")
         print("")
 
-    print("${color #f1fa8c}${font :bold:size=9}TASKS & DEADLINES:${font}${color}")
+    print("${color #f1fa8c}${font :bold:size=11}📋 TASKS & DEADLINES:${font}${color}")
     if not pending:
         print(" ${color #50fa7b}All tasks completed!${color}")
     else:
@@ -315,15 +316,15 @@ def show_conky():
                 due_tag = " ${color #ff5555}(Today)${color}"
             elif due:
                 due_tag = f" ${{color #f1fa8c}}({due})${{color}}"
-            print(f" [ ] #{tid} {title[:28]}" + due_tag)
+            print(f" [ ] #{tid} {title[:36]}" + due_tag)
 
     print("${hr 1}")
     yt_status = f"{yt_mins}/20 min" + (" ${color #ff5555}[LOCKED]${color}" if yt_blocked else "")
     print(f"⏱️ YouTube: {yt_status}")
     print("${hr 1}")
-    print("${color #bd93f9}${font :bold:size=8}QUICK COMMANDS:${font}${color}")
-    print("${color #8be9fd}• Add:${color} focusforge add \"...\" -d today")
-    print("${color #8be9fd}• Edit:${color} focusforge edit <id> -t \"...\"")
+    print("${color #bd93f9}${font :bold:size=10}⚡ QUICK COMMANDS:${font}${color}")
+    print("${color #8be9fd}• Add:${color} focusforge add \"task\" -d today")
+    print("${color #8be9fd}• Edit:${color} focusforge edit <id> -t \"new name\"")
     print("${color #8be9fd}• Done:${color} focusforge done <id>")
 
 def main():
