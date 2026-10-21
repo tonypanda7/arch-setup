@@ -234,6 +234,50 @@ def show_dashboard():
 
     print(f"{BOLD}{CYAN}└{line}┘{RESET}\n")
 
+def show_conky():
+    today = date.today()
+    today_str = today.isoformat()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, title, due_date FROM tasks
+        WHERE completed = 0
+        ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC
+        LIMIT 6
+    """)
+    pending = cur.fetchall()
+
+    cur.execute("SELECT title, period FROM goals ORDER BY id ASC LIMIT 3")
+    goals = cur.fetchall()
+    conn.close()
+
+    yt_secs, yt_blocked = get_today_youtube_usage()
+    yt_mins = yt_secs // 60
+
+    print("${color #00ffff}${font :bold:size=11}🎯 FOCUSFORGE${font}${color}")
+    print("${hr 1}")
+    if goals:
+        print("${color #ff79c6}${font :bold:size=9}GOALS:${font}${color}")
+        for gtitle, period in goals:
+            print(f" • {gtitle} ({period})")
+        print("")
+
+    print("${color #f1fa8c}${font :bold:size=9}TASKS & DEADLINES:${font}${color}")
+    if not pending:
+        print(" ${color #50fa7b}All tasks completed!${color}")
+    else:
+        for tid, title, due in pending:
+            due_tag = ""
+            if due == today_str:
+                due_tag = " ${color #ff5555}(Today)${color}"
+            elif due:
+                due_tag = f" ${{color #f1fa8c}}({due})${{color}}"
+            print(f" [ ] #{tid} {title[:28]}" + due_tag)
+
+    print("${hr 1}")
+    yt_status = f"{yt_mins}/20 min" + (" ${color #ff5555}[LOCKED]${color}" if yt_blocked else "")
+    print(f"⏱️ YouTube: {yt_status}")
+
 def main():
     parser = argparse.ArgumentParser(description="FocusForge - Task & Habit Guardian")
     subparsers = parser.add_subparsers(dest="command")
@@ -260,9 +304,10 @@ def main():
     p_g_add.add_argument("--period", "-p", choices=["daily", "weekly", "monthly"], default="weekly")
     p_goal_sub.add_parser("list", help="List goals")
 
-    # status / show
+    # status / show / conky
     subparsers.add_parser("show", help="Show dashboard")
     subparsers.add_parser("list", help="Show dashboard")
+    subparsers.add_parser("conky", help="Output formatted for desktop Conky widget")
 
     args = parser.parse_args()
 
@@ -277,8 +322,11 @@ def main():
             add_goal(args.title, args.period)
         else:
             list_goals()
+    elif args.command == "conky":
+        show_conky()
     else:
         show_dashboard()
+
 
 if __name__ == "__main__":
     main()

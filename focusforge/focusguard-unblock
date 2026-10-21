@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# FocusGuard Unblocker - Restores YouTube access in /etc/hosts
+set -e
+
+BLOCK_MARKER="# FOCUSGUARD_BLOCK_START"
+BLOCK_END="# FOCUSGUARD_BLOCK_END"
+
+if grep -q "$BLOCK_MARKER" /etc/hosts 2>/dev/null; then
+    sed -i "/$BLOCK_MARKER/,/$BLOCK_END/d" /etc/hosts
+    echo "YouTube unblocked successfully in /etc/hosts."
+else
+    echo "YouTube was not blocked."
+fi

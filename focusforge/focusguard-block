@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# FocusGuard Hard Blocker - Blocks YouTube in /etc/hosts
+set -e
+
+BLOCK_MARKER="# FOCUSGUARD_BLOCK_START"
+BLOCK_END="# FOCUSGUARD_BLOCK_END"
+
+if grep -q "$BLOCK_MARKER" /etc/hosts 2>/dev/null; then
+    echo "YouTube is already blocked in /etc/hosts."
+    exit 0
+fi
+
+cat << 'EOF' >> /etc/hosts
+# FOCUSGUARD_BLOCK_START
+0.0.0.0 youtube.com
+0.0.0.0 www.youtube.com
+0.0.0.0 m.youtube.com
+0.0.0.0 youtu.be
+0.0.0.0 s.ytimg.com
+0.0.0.0 youtubei.googleapis.com
+::1 youtube.com
+::1 www.youtube.com
+::1 m.youtube.com
+::1 youtu.be
+# FOCUSGUARD_BLOCK_END
+EOF
+
+echo "YouTube blocked successfully in /etc/hosts."
