@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FocusForge Conky Widget
+Comment=Desktop productivity overlay
+Exec=conky -c /home/tonypanda/.config/conky/focusforge.conkyrc --daemonize --pause=3
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+StartupNotify=false
+Terminal=false
