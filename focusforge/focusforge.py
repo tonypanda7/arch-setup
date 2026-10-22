@@ -7,6 +7,7 @@ import sys
 import re
 import sqlite3
 import argparse
+import subprocess
 from datetime import datetime, date, timedelta
 
 DB_DIR = os.path.expanduser("~/.local/share/focusforge")
@@ -81,6 +82,13 @@ def get_connection():
     init_db()
     return sqlite3.connect(DB_PATH)
 
+def notify_widget_reload():
+    """Signals conky to refresh immediately upon database modifications."""
+    try:
+        subprocess.run(["pkill", "-USR1", "-x", "conky"], check=False)
+    except Exception:
+        pass
+
 def parse_date_arg(val):
     if not val:
         return None
@@ -110,6 +118,7 @@ def add_task(title, due=None, start=None, goal=None):
     task_id = cur.lastrowid
     conn.commit()
     conn.close()
+    notify_widget_reload()
     
     msg = f"{GREEN}✓ Task #{task_id} added:{RESET} {BOLD}{title}{RESET}"
     msg += f" {DIM}(Started: {parsed_start}){RESET}"
@@ -147,6 +156,7 @@ def edit_task(task_id, title=None, due=None, start=None, goal=None):
     cur.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
     if cur.rowcount > 0:
         conn.commit()
+        notify_widget_reload()
         print(f"{GREEN}✓ Task #{task_id} updated successfully!{RESET}")
     else:
         print(f"{RED}Task #{task_id} not found.{RESET}")
@@ -159,6 +169,7 @@ def complete_task(task_id):
     cur.execute("UPDATE tasks SET completed = 1, completed_at = ? WHERE id = ?", (now_iso, task_id))
     if cur.rowcount > 0:
         conn.commit()
+        notify_widget_reload()
         print(f"{GREEN}✓ Task #{task_id} marked as completed!{RESET}")
     else:
         print(f"{RED}Task #{task_id} not found.{RESET}")
@@ -170,6 +181,7 @@ def delete_task(task_id):
     cur.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
     if cur.rowcount > 0:
         conn.commit()
+        notify_widget_reload()
         print(f"{YELLOW}Task #{task_id} deleted.{RESET}")
     else:
         print(f"{RED}Task #{task_id} not found.{RESET}")
@@ -182,6 +194,7 @@ def add_goal(title, period="weekly"):
     goal_id = cur.lastrowid
     conn.commit()
     conn.close()
+    notify_widget_reload()
     print(f"{GREEN}✓ Goal #{goal_id} added:{RESET} {BOLD}{title}{RESET} ({period})")
 
 def list_goals():

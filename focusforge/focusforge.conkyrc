@@ -27,10 +27,10 @@ conky.config = {
     own_window_colour = '#1e1e2edd',
     lua_load = '/home/tonypanda/.config/conky/focusforge_click.lua',
     lua_mouse_hook = 'on_mouse',
-    update_interval = 2.0,
+    update_interval = 10.0,
     use_xft = true,
 }
 
 conky.text = [[
-${execpi 5 focusforge conky}
+${execpi 30 /usr/bin/python3 /home/tonypanda/focusforge/focusforge.py conky}
 ]]
