@@ -43,6 +43,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
+            start_date TEXT,
             due_date TEXT,
             goal_tag TEXT,
             completed INTEGER DEFAULT 0,
@@ -50,6 +51,13 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Check if start_date column exists (schema migration)
+    cur.execute("PRAGMA table_info(tasks)")
+    cols = [r[1] for r in cur.fetchall()]
+    if "start_date" not in cols:
+        cur.execute("ALTER TABLE tasks ADD COLUMN start_date TEXT")
+        cur.execute("UPDATE tasks SET start_date = date(created_at) WHERE start_date IS NULL")
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS goals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,45 +81,45 @@ def get_connection():
     init_db()
     return sqlite3.connect(DB_PATH)
 
-def add_task(title, due=None, goal=None):
-    parsed_due = None
+def parse_date_arg(val):
+    if not val:
+        return None
     today = date.today()
-    if due:
-        lower = due.strip().lower()
-        if lower in ("today", "t"):
-            parsed_due = today.isoformat()
-        elif lower in ("tomorrow", "tom"):
-            parsed_due = (today + timedelta(days=1)).isoformat()
-        else:
-            try:
-                parsed_due = datetime.strptime(due, "%Y-%m-%d").date().isoformat()
-            except ValueError:
-                parsed_due = due
+    lower = val.strip().lower()
+    if lower in ("today", "t"):
+        return today.isoformat()
+    elif lower in ("tomorrow", "tom"):
+        return (today + timedelta(days=1)).isoformat()
+    elif lower in ("yesterday", "yest"):
+        return (today - timedelta(days=1)).isoformat()
+    else:
+        try:
+            return datetime.strptime(val, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            return val
+
+def add_task(title, due=None, start=None, goal=None):
+    today_str = date.today().isoformat()
+    parsed_start = parse_date_arg(start) or today_str
+    parsed_due = parse_date_arg(due)
 
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("INSERT INTO tasks (title, due_date, goal_tag) VALUES (?, ?, ?)",
-                (title, parsed_due, goal))
+    cur.execute("INSERT INTO tasks (title, start_date, due_date, goal_tag) VALUES (?, ?, ?, ?)",
+                (title, parsed_start, parsed_due, goal))
     task_id = cur.lastrowid
     conn.commit()
     conn.close()
-    print(f"{GREEN}✓ Task #{task_id} added:{RESET} {BOLD}{title}{RESET}" +
-          (f" {YELLOW}(Due: {parsed_due}){RESET}" if parsed_due else ""))
+    
+    msg = f"{GREEN}✓ Task #{task_id} added:{RESET} {BOLD}{title}{RESET}"
+    msg += f" {DIM}(Started: {parsed_start}){RESET}"
+    if parsed_due:
+        msg += f" {YELLOW}(Due: {parsed_due}){RESET}"
+    print(msg)
 
-def edit_task(task_id, title=None, due=None, goal=None):
-    today = date.today()
-    parsed_due = None
-    if due:
-        lower = due.strip().lower()
-        if lower in ("today", "t"):
-            parsed_due = today.isoformat()
-        elif lower in ("tomorrow", "tom"):
-            parsed_due = (today + timedelta(days=1)).isoformat()
-        else:
-            try:
-                parsed_due = datetime.strptime(due, "%Y-%m-%d").date().isoformat()
-            except ValueError:
-                parsed_due = due
+def edit_task(task_id, title=None, due=None, start=None, goal=None):
+    parsed_due = parse_date_arg(due) if due is not None else None
+    parsed_start = parse_date_arg(start) if start is not None else None
 
     conn = get_connection()
     cur = conn.cursor()
@@ -120,6 +128,9 @@ def edit_task(task_id, title=None, due=None, goal=None):
     if title:
         updates.append("title = ?")
         params.append(title)
+    if start is not None:
+        updates.append("start_date = ?")
+        params.append(parsed_start)
     if due is not None:
         updates.append("due_date = ?")
         params.append(parsed_due)
@@ -128,7 +139,7 @@ def edit_task(task_id, title=None, due=None, goal=None):
         params.append(goal)
 
     if not updates:
-        print(f"{YELLOW}No updates specified. Use --title, --due, or --goal.{RESET}")
+        print(f"{YELLOW}No updates specified. Use --title, --start, --due, or --goal.{RESET}")
         conn.close()
         return
 
@@ -197,6 +208,58 @@ def get_today_youtube_usage():
         return 0, False
     return row[0], bool(row[1])
 
+def format_timing_badge(start_d, due_d, today_obj):
+    parts = []
+    if due_d:
+        try:
+            d_obj = datetime.strptime(due_d, "%Y-%m-%d").date()
+            diff = (d_obj - today_obj).days
+            if diff < 0:
+                parts.append(f"{RED}{BOLD}OVERDUE {abs(diff)}d!{RESET}")
+            elif diff == 0:
+                parts.append(f"{RED}Due: Today{RESET}")
+            elif diff == 1:
+                parts.append(f"{YELLOW}Due: Tomorrow{RESET}")
+            else:
+                parts.append(f"{YELLOW}Due: {d_obj.strftime('%b %d')}{RESET}")
+        except Exception:
+            parts.append(f"{YELLOW}Due: {due_d}{RESET}")
+
+    if start_d:
+        try:
+            s_obj = datetime.strptime(start_d, "%Y-%m-%d").date()
+            parts.append(f"{DIM}Started: {s_obj.strftime('%b %d')}{RESET}")
+        except Exception:
+            parts.append(f"{DIM}Started: {start_d}{RESET}")
+
+    return f" ({' | '.join(parts)})" if parts else ""
+
+def format_conky_badge(start_d, due_d, today_obj):
+    parts = []
+    if due_d:
+        try:
+            d_obj = datetime.strptime(due_d, "%Y-%m-%d").date()
+            diff = (d_obj - today_obj).days
+            if diff < 0:
+                parts.append(f"${{color #ff5555}}OVERDUE {abs(diff)}d!${{color}}")
+            elif diff == 0:
+                parts.append(f"${{color #ff5555}}Due Today${{color}}")
+            elif diff == 1:
+                parts.append(f"${{color #f1fa8c}}Due Tomorrow${{color}}")
+            else:
+                parts.append(f"${{color #f1fa8c}}Due {d_obj.strftime('%b %d')}${{color}}")
+        except Exception:
+            parts.append(f"${{color #f1fa8c}}Due {due_d}${{color}}")
+
+    if start_d:
+        try:
+            s_obj = datetime.strptime(start_d, "%Y-%m-%d").date()
+            parts.append(f"${{color #6272a4}}Start: {s_obj.strftime('%b %d')}${{color}}")
+        except Exception:
+            parts.append(f"${{color #6272a4}}Start: {start_d}${{color}}")
+
+    return f" ({' | '.join(parts)})" if parts else ""
+
 def show_dashboard():
     today = date.today()
     today_str = today.isoformat()
@@ -205,12 +268,20 @@ def show_dashboard():
     conn = get_connection()
     cur = conn.cursor()
 
-    # Pending tasks
+    # Active pending tasks (ordered by urgency: overdue -> today -> future -> ongoing)
     cur.execute("""
-        SELECT id, title, due_date, goal_tag FROM tasks
+        SELECT id, title, start_date, due_date, goal_tag FROM tasks
         WHERE completed = 0
-        ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC
-    """)
+        ORDER BY 
+            CASE 
+                WHEN due_date IS NOT NULL AND due_date < ? THEN 0
+                WHEN due_date = ? THEN 1
+                WHEN due_date IS NOT NULL THEN 2
+                ELSE 3 
+            END,
+            due_date ASC,
+            start_date ASC
+    """, (today_str, today_str))
     pending = cur.fetchall()
 
     # Completed today
@@ -260,23 +331,19 @@ def show_dashboard():
     if not pending:
         print_box_row(' No pending tasks! Add with: focusforge add "..."', GREEN)
     else:
-        for tid, title, due, goal in pending:
+        for tid, title, start_d, due_d, goal in pending:
             status_box = "[ ]"
-            due_str = ""
-            if due:
-                if due == today_str:
-                    due_str = f" {RED}(Due: Today){RESET}"
-                else:
-                    due_str = f" {YELLOW}(Due: {due}){RESET}"
-
+            timing_badge = format_timing_badge(start_d, due_d, today)
+            
             clean_prefix = f" #{tid} {status_box} "
             clean_title = title
-            raw_len = len(clean_prefix) + len(clean_title) + (len(f" (Due: {due})") if due else 0)
-            if raw_len > width - 4:
-                avail = width - 4 - len(clean_prefix) - (len(f" (Due: {due})") if due else 0)
-                clean_title = clean_title[:max(10, avail)] + "…"
+            # Calculate visible length
+            row_raw_len = len(clean_prefix) + len(clean_title) + disp_len(timing_badge)
+            if row_raw_len > width - 4:
+                avail = width - 4 - len(clean_prefix) - disp_len(timing_badge)
+                clean_title = clean_title[:max(8, avail)] + "…"
 
-            task_line = f" {CYAN}#{tid}{RESET} [ ] {BOLD}{clean_title}{RESET}{due_str}"
+            task_line = f" {CYAN}#{tid}{RESET} [ ] {BOLD}{clean_title}{RESET}{timing_badge}"
             print_box_row(task_line)
 
     print(f"{BOLD}{CYAN}├{line}┤{RESET}")
@@ -284,7 +351,7 @@ def show_dashboard():
     # Quick Commands section
     print_box_row(f"{BOLD}{MAGENTA}⚡ QUICK COMMANDS{RESET}")
     cmds = [
-        ('focusforge add "task" -d today', 'Add task'),
+        ('focusforge add "task" -d today -s today', 'Add task'),
         ('focusforge edit <id> -t "..."', 'Edit task'),
         ('focusforge done <id>', 'Complete'),
     ]
@@ -310,11 +377,19 @@ def show_conky():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, title, due_date FROM tasks
+        SELECT id, title, start_date, due_date FROM tasks
         WHERE completed = 0
-        ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC
-        LIMIT 6
-    """)
+        ORDER BY 
+            CASE 
+                WHEN due_date IS NOT NULL AND due_date < ? THEN 0
+                WHEN due_date = ? THEN 1
+                WHEN due_date IS NOT NULL THEN 2
+                ELSE 3 
+            END,
+            due_date ASC,
+            start_date ASC
+        LIMIT 8
+    """, (today_str, today_str))
     pending = cur.fetchall()
 
     cur.execute("SELECT title, period FROM goals ORDER BY id ASC LIMIT 3")
@@ -337,13 +412,9 @@ def show_conky():
     if not pending:
         print(" ${color #50fa7b}All tasks completed!${color}")
     else:
-        for tid, title, due in pending:
-            due_tag = ""
-            if due == today_str:
-                due_tag = " ${color #ff5555}(Today)${color}"
-            elif due:
-                due_tag = f" ${{color #f1fa8c}}({due})${{color}}"
-            print(f" [ ] #{tid} {title[:36]}" + due_tag)
+        for tid, title, start_d, due_d in pending:
+            conky_badge = format_conky_badge(start_d, due_d, today)
+            print(f" [ ] #{tid} {title[:30]}" + conky_badge)
 
     print("${hr 1}")
     yt_status = f"{yt_mins}/20 min" + (" ${color #ff5555}[LOCKED]${color}" if yt_blocked else "")
@@ -362,6 +433,7 @@ def main():
     p_add = subparsers.add_parser("add", help="Add a task")
     p_add.add_argument("title", type=str, help="Task description")
     p_add.add_argument("--due", "-d", type=str, default=None, help="Due date (today, tomorrow, YYYY-MM-DD)")
+    p_add.add_argument("--start", "-s", type=str, default=None, help="Start date (defaults to today, YYYY-MM-DD)")
     p_add.add_argument("--goal", "-g", type=str, default=None, help="Goal category or tag")
 
     # edit
@@ -369,6 +441,7 @@ def main():
     p_edit.add_argument("id", type=int, help="Task ID")
     p_edit.add_argument("--title", "-t", type=str, default=None, help="New task title")
     p_edit.add_argument("--due", "-d", type=str, default=None, help="New due date (today, tomorrow, YYYY-MM-DD)")
+    p_edit.add_argument("--start", "-s", type=str, default=None, help="New start date (today, YYYY-MM-DD)")
     p_edit.add_argument("--goal", "-g", type=str, default=None, help="New goal tag")
 
     # done
@@ -395,9 +468,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "add":
-        add_task(args.title, args.due, args.goal)
+        add_task(args.title, args.due, args.start, args.goal)
     elif args.command == "edit":
-        edit_task(args.id, args.title, args.due, args.goal)
+        edit_task(args.id, args.title, args.due, args.start, args.goal)
     elif args.command == "done":
         complete_task(args.id)
     elif args.command == "rm":
