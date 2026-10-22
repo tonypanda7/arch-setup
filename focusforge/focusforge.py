@@ -4,6 +4,7 @@ FocusForge - Personal Productivity & Task Tracking Dashboard
 """
 import os
 import sys
+import re
 import sqlite3
 import argparse
 from datetime import datetime, date, timedelta
@@ -21,6 +22,18 @@ RED = "\033[31m"
 CYAN = "\033[36m"
 MAGENTA = "\033[35m"
 BLUE = "\033[34m"
+
+def disp_len(s):
+    clean = re.sub(r"\033\[[0-9;]*m", "", s)
+    length = 0
+    for ch in clean:
+        if ch in ("\ufe0f", "\ufe0e"):
+            continue
+        if ord(ch) > 0x2000 and (ord(ch) >= 0x1f300 or ord(ch) in (0x26a1, 0x2705)):
+            length += 2
+        else:
+            length += 1
+    return length
 
 def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
@@ -216,31 +229,36 @@ def show_dashboard():
     yt_secs, yt_blocked = get_today_youtube_usage()
     yt_mins = yt_secs // 60
 
-    width = 54
+    width = 56
     line = "─" * width
+
+    def print_box_row(content, style=""):
+        dlen = disp_len(content)
+        pad = max(0, width - 2 - dlen)
+        print(f"{BOLD}{CYAN}│{RESET} {style}{content}{RESET}" + " " * pad + f"{BOLD}{CYAN}│{RESET}")
 
     print(f"\n{BOLD}{CYAN}┌{line}┐{RESET}")
     header_text = f"🎯 FOCUSFORGE • {now_formatted}"
-    print(f"{BOLD}{CYAN}│{RESET} {BOLD}{header_text.center(width - 2)}{RESET} {BOLD}{CYAN}│{RESET}")
+    header_dlen = disp_len(header_text)
+    left_pad = max(0, (width - header_dlen) // 2)
+    right_pad = max(0, width - header_dlen - left_pad)
+    print(f"{BOLD}{CYAN}│{RESET}" + " " * left_pad + f"{BOLD}{header_text}{RESET}" + " " * right_pad + f"{BOLD}{CYAN}│{RESET}")
     print(f"{BOLD}{CYAN}├{line}┤{RESET}")
 
     # Goals section
     if goals:
-        print(f"{BOLD}{CYAN}│{RESET} {BOLD}{MAGENTA}🌟 KEY GOALS{RESET}" + " " * (width - 13) + f"{BOLD}{CYAN}│{RESET}")
+        print_box_row(f"{BOLD}{MAGENTA}🌟 KEY GOALS{RESET}")
         for _, gtitle, period in goals[:3]:
-            g_disp = f"  • ({period}) {gtitle}"
+            g_disp = f" • ({period}) {gtitle}"
             if len(g_disp) > width - 4:
                 g_disp = g_disp[:width - 7] + "..."
-            padding = width - 2 - len(g_disp)
-            print(f"{BOLD}{CYAN}│{RESET}{DIM}{g_disp}{RESET}" + " " * padding + f"{BOLD}{CYAN}│{RESET}")
-        print(f"{BOLD}{CYAN}│{RESET}" + " " * (width - 2) + f"{BOLD}{CYAN}│{RESET}")
+            print_box_row(g_disp, DIM)
+        print_box_row("")
 
     # Tasks section
-    print(f"{BOLD}{CYAN}│{RESET} {BOLD}{YELLOW}📋 TASKS & DEADLINES{RESET}" + " " * (width - 22) + f"{BOLD}{CYAN}│{RESET}")
+    print_box_row(f"{BOLD}{YELLOW}📋 TASKS & DEADLINES{RESET}")
     if not pending:
-        msg = "  No pending tasks! Add one with: focusforge add \"...\""
-        padding = max(0, width - 2 - len(msg))
-        print(f"{BOLD}{CYAN}│{RESET}{GREEN}{msg}{RESET}" + " " * padding + f"{BOLD}{CYAN}│{RESET}")
+        print_box_row(' No pending tasks! Add with: focusforge add "..."', GREEN)
     else:
         for tid, title, due, goal in pending:
             status_box = "[ ]"
@@ -251,15 +269,27 @@ def show_dashboard():
                 else:
                     due_str = f" {YELLOW}(Due: {due}){RESET}"
 
-            clean_line = f"  #{tid} {status_box} {title}"
-            raw_len = len(f"  #{tid} {status_box} {title}") + (len(f" (Due: {due})") if due else 0)
+            clean_prefix = f" #{tid} {status_box} "
+            clean_title = title
+            raw_len = len(clean_prefix) + len(clean_title) + (len(f" (Due: {due})") if due else 0)
             if raw_len > width - 4:
-                avail = width - 4 - (len(f"  #{tid} {status_box} ") + (len(f" (Due: {due})") if due else 0))
-                title = title[:max(10, avail)] + "…"
-                raw_len = len(f"  #{tid} {status_box} {title}") + (len(f" (Due: {due})") if due else 0)
+                avail = width - 4 - len(clean_prefix) - (len(f" (Due: {due})") if due else 0)
+                clean_title = clean_title[:max(10, avail)] + "…"
 
-            padding = max(0, width - 2 - raw_len)
-            print(f"{BOLD}{CYAN}│{RESET}  {CYAN}#{tid}{RESET} [ ] {BOLD}{title}{RESET}{due_str}" + " " * padding + f"{BOLD}{CYAN}│{RESET}")
+            task_line = f" {CYAN}#{tid}{RESET} [ ] {BOLD}{clean_title}{RESET}{due_str}"
+            print_box_row(task_line)
+
+    print(f"{BOLD}{CYAN}├{line}┤{RESET}")
+
+    # Quick Commands section
+    print_box_row(f"{BOLD}{MAGENTA}⚡ QUICK COMMANDS{RESET}")
+    cmds = [
+        ('focusforge add "task" -d today', 'Add task'),
+        ('focusforge edit <id> -t "..."', 'Edit task'),
+        ('focusforge done <id>', 'Complete'),
+    ]
+    for c, _ in cmds:
+        print_box_row(f" • {c}", DIM)
 
     print(f"{BOLD}{CYAN}├{line}┤{RESET}")
 
@@ -269,11 +299,8 @@ def show_dashboard():
     if yt_blocked:
         yt_status += f" {RED}{BOLD}[LOCKED]{RESET}"
 
-    status_line = f"  ⏱️  YouTube: {yt_status}  |  ✓ Done Today: {GREEN}{completed_today_count}{RESET}"
-    # Approximate visible length
-    vis_len = len(f"  ⏱️  YouTube: {yt_mins}/20 mins used" + (" [LOCKED]" if yt_blocked else "") + f"  |  ✓ Done Today: {completed_today_count}")
-    padding = max(0, width - 2 - vis_len)
-    print(f"{BOLD}{CYAN}│{RESET}{status_line}" + " " * padding + f"{BOLD}{CYAN}│{RESET}")
+    status_line = f"⏱️  YouTube: {yt_status}  |  ✓ Done Today: {GREEN}{completed_today_count}{RESET}"
+    print_box_row(status_line)
 
     print(f"{BOLD}{CYAN}└{line}┘{RESET}\n")
 
